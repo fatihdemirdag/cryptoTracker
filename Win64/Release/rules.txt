@@ -3,7 +3,7 @@ mailoff
 musicon
 2000
 27
-FAV change 0.8 10
+FAV change 0.7 10
 FAV change 1.4 60
 FAV change 2.0 300
 FAV change 3.0 900

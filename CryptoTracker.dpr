@@ -37,7 +37,7 @@ type
     symbol: string[16];
     rate: double;
     interval: cardinal;
-    step: cardinal;
+    step: integer;
   end;
 
 var
@@ -54,7 +54,7 @@ var
 
   fStopWatch     : TStopwatch;
   fInterval      : double;
-  fStepIndex     : cardinal;
+  fStepIndex     : integer;
   fTimeIndex     : double;
   fPriceCheckTime: double;
   fMessages      : TList<TMessage>;
@@ -99,7 +99,7 @@ begin
 
     mPlayer          := TMediaPlayer.Create(nil);
     mPlayer.FileName := 'bimp.mp3';
-    mPlayer.Volume   := 0.25;
+    mPlayer.Volume   := 25;
     mPlayer.Play;
   end;
 
@@ -604,11 +604,11 @@ begin
 
   if msg.rate < 0.0 then
   begin
-    if msg.step < fStepIndex - 1 then
+    if msg.step >= fStepIndex - 1 then
       color := TCTColor.White
-    else if msg.step < fStepIndex - 15 then
+    else if msg.step >= fStepIndex - 15 then
       color := TCTColor.LightRed
-    else if msg.step < fStepIndex - 90 then
+    else if msg.step >= fStepIndex - 90 then
       color := TCTColor.Red
     else
       color := TCTColor.DarkGray;
@@ -616,11 +616,11 @@ begin
   end
   else
   begin
-    if msg.step < fStepIndex - 1 then
+    if msg.step >= fStepIndex - 1 then
       color := TCTColor.White
-    else if msg.step < fStepIndex - 15 then
+    else if msg.step >= fStepIndex - 15 then
       color := TCTColor.LightGreen
-    else if msg.step < fStepIndex - 90 then
+    else if msg.step >= fStepIndex - 90 then
       color := TCTColor.Green
     else
       color := TCTColor.DarkGray;
