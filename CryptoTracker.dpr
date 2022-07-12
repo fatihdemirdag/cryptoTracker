@@ -99,6 +99,7 @@ begin
 
     mPlayer          := TMediaPlayer.Create(nil);
     mPlayer.FileName := 'bimp.mp3';
+    mPlayer.Volume   := 0.25;
     mPlayer.Play;
   end;
 
@@ -436,7 +437,7 @@ begin
 
   if dataHolder.GetDataDepth > Trunc(3600000.0 / fInterval) then
   begin
-    val1h := dataHolder.GetMarketData(coin + 'USDT', Trunc(30000.0 / fInterval));
+    val1h := dataHolder.GetMarketData(coin + 'USDT', Trunc(3600000.0 / fInterval));
     rat1h := (currValue - val1h) / val1h * 100.0;
 
     if rat1h = 0.0 then
@@ -603,24 +604,33 @@ begin
 
   if msg.rate < 0.0 then
   begin
-    if msg.step < fStepIndex - 5 then
+    if msg.step < fStepIndex - 90 then
+      color := TCTColor.DarkGray
+    else if msg.step < fStepIndex - 15 then
       color := TCTColor.Red
+    else if msg.step < fStepIndex - 1 then
+      color := TCTColor.LightRed
     else
-      color := TCTColor.LightRed;
+      color := TCTColor.White;
     text    := ' lost ';
   end
   else
   begin
-    if msg.step < fStepIndex - 5 then
+    if msg.step < fStepIndex - 90 then
+      color := TCTColor.DarkGray
+    else if msg.step < fStepIndex - 15 then
       color := TCTColor.Green
+    else if msg.step < fStepIndex - 1 then
+      color := TCTColor.LightGreen
     else
-      color := TCTColor.LightGreen;
+      color := TCTColor.White;
     text    := ' gained ';
   end;
 
   intervalstr := GetIntervalStr(msg.interval);
 
-  Print(' ' + timestr + ': ' + msg.symbol + text + FloatToStr(msg.rate) + ' in ' + intervalstr, color);
+  Print(' ' + timestr + ' [' + inttostr(msg.step) + ']: ' + msg.symbol + text + FloatToStr(msg.rate) + ' in ' +
+      intervalstr, color);
 end;
 
 
@@ -669,6 +679,9 @@ begin
   Print('    DataSize: ', TCTColor.White);
   Print(inttostr(rspSymbolPrice.Content.length), TCTColor.Cyan);
   Print(' bytes ', TCTColor.White);
+
+  Print('    Step: ', TCTColor.White);
+  Print(inttostr(fStepIndex), TCTColor.LightGray);
 end;
 
 
