@@ -1,0 +1,276 @@
+unit uExchangeDataHolder;
+
+
+
+interface
+
+
+
+uses
+  System.Generics.Collections;
+
+
+const
+  DATA_LIMIT = 1800;
+
+
+type
+  TMarket = packed record
+    Name: string[32];
+    Coin: string[16];
+    Base: string[16];
+    value: array [0 .. DATA_LIMIT - 1] of double;
+    x_n_n: array [0 .. DATA_LIMIT - 1] of double;
+    x_n_np1: array [0 .. DATA_LIMIT - 1] of double;
+    p: array [0 .. DATA_LIMIT - 1] of double;
+    K: array [0 .. DATA_LIMIT - 1] of double;
+  end;
+
+
+
+  PMarket = ^TMarket;
+
+
+
+  TExchangeDataHolder = class(TObject)
+    private
+      fName        : string;
+      fMarketCount : cardinal;
+      fMarkets     : TDictionary<string, PMarket>;
+      fMarketList  : TList<PMarket>;
+      fStartIndex  : integer;
+      fEndIndex    : integer;
+      fNewDataIndex: integer;
+      fDataDepth   : integer;
+
+      function GetDataIndex(offset: cardinal): cardinal;
+      function GetData(market: PMarket; dataOffset: cardinal): double;
+      procedure CalculateKalman(Name: string);
+
+    protected
+    public
+      constructor Create(exchangeName: string);
+
+      procedure ApplyNewData;
+      function GetDataDepth: integer;
+      procedure AddMarket(Name, Coin, Base: string);
+      function GetMarket(Name: string): PMarket; overload;
+      function GetMarket(index: cardinal): PMarket; overload;
+      function GetMarketCount: cardinal;
+      function GetMarketData(Name: string; dataOffset: cardinal): double; overload;
+      function GetMarketData(index: cardinal; dataOffset: cardinal): double; overload;
+      function GetMarketPrediction(Name: string; dataOffset: cardinal): double; overload;
+      function GetMarketPrediction(index: cardinal; dataOffset: cardinal): double; overload;
+      function GetPredictionAccuracy(Name: string; dataOffset: cardinal): double; overload;
+      function GetPredictionAccuracy(index: cardinal; dataOffset: cardinal): double; overload;
+      procedure NewMarketData(Name: string; value: double);
+
+      property Name: string read fName;
+  end;
+
+
+
+implementation
+
+
+
+{ TExchangeDataHolder }
+
+
+
+procedure TExchangeDataHolder.AddMarket(Name, Coin, Base: string);
+var
+  tmpMarket: PMarket;
+  I        : integer;
+begin
+  if not fMarkets.ContainsKey(name) then
+  begin
+    tmpMarket      := GetMemory(sizeof(TMarket));
+    tmpMarket.Name := name;
+    tmpMarket.Coin := Coin;
+    tmpMarket.Base := Base;
+
+    for I                := 0 to DATA_LIMIT - 1 do
+      tmpMarket.value[I] := 0;
+
+    fMarkets.Add(name, tmpMarket);
+    fMarketList.Add(tmpMarket);
+  end;
+end;
+
+
+
+procedure TExchangeDataHolder.ApplyNewData;
+begin
+  fStartIndex   := fNewDataIndex;
+  fNewDataIndex := fNewDataIndex + 1;
+  if fNewDataIndex = DATA_LIMIT then
+    fNewDataIndex := 0;
+
+  if fEndIndex < 0 then
+    fEndIndex := 0;
+  if fNewDataIndex = fEndIndex then
+    fEndIndex := fNewDataIndex + 1;
+  if fEndIndex = DATA_LIMIT then
+    fEndIndex := 0;
+
+  fDataDepth := fDataDepth + 1;
+end;
+
+
+
+procedure TExchangeDataHolder.CalculateKalman(Name: string);
+var
+  r: double;
+begin
+  r := 0.1;
+
+  if fDataDepth >= 1 then
+  begin
+    fMarkets[name].x_n_n[fNewDataIndex]   := fMarkets[name].value[fNewDataIndex];
+    fMarkets[name].x_n_np1[fNewDataIndex] := fMarkets[name].value[fNewDataIndex];
+    fMarkets[name].p[fNewDataIndex]       := 0.5;
+    fMarkets[name].K[fNewDataIndex]       := 0.0;
+  end
+  else
+  begin
+    fMarkets[name].K[fNewDataIndex]     := fMarkets[name].p[fStartIndex] / (r + fMarkets[name].p[fStartIndex]);
+    fMarkets[name].p[fNewDataIndex]     := (1.0 - fMarkets[name].K[fNewDataIndex]) * fMarkets[name].p[fStartIndex];
+    fMarkets[name].x_n_n[fNewDataIndex] := fMarkets[name].x_n_n[fStartIndex] + fMarkets[name].K[fNewDataIndex] *
+      (fMarkets[name].value[fNewDataIndex] - fMarkets[name].x_n_n[fStartIndex]);
+  end;
+end;
+
+
+
+constructor TExchangeDataHolder.Create(exchangeName: string);
+begin
+  fName := exchangeName;
+
+  fMarkets    := TDictionary<string, PMarket>.Create;
+  fMarketList := TList<PMarket>.Create;
+
+  fStartIndex   := -1;
+  fEndIndex     := -1;
+  fNewDataIndex := 0;
+end;
+
+
+
+function TExchangeDataHolder.GetData(market: PMarket; dataOffset: cardinal): double;
+var
+  location: integer;
+begin
+  location := (fStartIndex - dataOffset);
+  if location < 0 then
+    location := location + DATA_LIMIT;
+
+  result := market.value[location];
+end;
+
+
+
+function TExchangeDataHolder.GetDataDepth: integer;
+begin
+  result := fDataDepth;
+end;
+
+
+
+function TExchangeDataHolder.GetDataIndex(offset: cardinal): cardinal;
+var
+  location: integer;
+begin
+  location := (fStartIndex - offset);
+  if location < 0 then
+    location := location + DATA_LIMIT;
+end;
+
+
+
+function TExchangeDataHolder.GetMarket(Name: string): PMarket;
+begin
+  result := fMarkets[name];
+end;
+
+
+
+function TExchangeDataHolder.GetMarket(index: cardinal): PMarket;
+begin
+  result := fMarketList[index];
+end;
+
+
+
+function TExchangeDataHolder.GetMarketCount: cardinal;
+begin
+  result := fMarkets.Count;
+end;
+
+
+
+function TExchangeDataHolder.GetMarketData(index, dataOffset: cardinal): double;
+begin
+  result := GetData(fMarketList[index], dataOffset);
+end;
+
+
+
+function TExchangeDataHolder.GetMarketPrediction(index, dataOffset: cardinal): double;
+begin
+  result := fMarketList[index].x_n_np1[GetDataIndex(dataOffset)];
+end;
+
+
+
+function TExchangeDataHolder.GetPredictionAccuracy(index, dataOffset: cardinal): double;
+var
+  prediction: double;
+  value: double;
+begin
+  prediction := fMarketList[index].x_n_np1[GetDataIndex(dataOffset + 1)];
+  value := fMarketList[index].value[GetDataIndex(dataOffset)];
+
+  result := (prediction - value) / value;
+end;
+
+
+
+function TExchangeDataHolder.GetPredictionAccuracy(Name: string; dataOffset: cardinal): double;
+var
+  prediction: double;
+  value: double;
+begin
+  prediction := fMarkets[Name].x_n_np1[GetDataIndex(dataOffset + 1)];
+  value := fMarkets[Name].value[GetDataIndex(dataOffset)];
+
+  result := (prediction - value) / value;
+end;
+
+
+
+function TExchangeDataHolder.GetMarketPrediction(Name: string; dataOffset: cardinal): double;
+begin
+  result := fMarkets[Name].x_n_np1[GetDataIndex(dataOffset)];
+end;
+
+
+
+function TExchangeDataHolder.GetMarketData(Name: string; dataOffset: cardinal): double;
+begin
+  result := GetData(fMarkets[Name], dataOffset);
+end;
+
+
+
+procedure TExchangeDataHolder.NewMarketData(Name: string; value: double);
+begin
+  if fMarkets.ContainsKey(Name) then
+    fMarkets[name].value[fNewDataIndex] := value;
+
+  CalculateKalman(name);
+end;
+
+
+
+end.

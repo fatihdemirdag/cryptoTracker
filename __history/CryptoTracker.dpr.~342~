@@ -1,0 +1,693 @@
+program CryptoTracker;
+
+{$APPTYPE CONSOLE}
+{$R *.res}
+
+
+uses
+  System.SysUtils,
+  System.StrUtils,
+  System.Diagnostics,
+  System.Types,
+  System.Classes,
+  System.Generics.Collections,
+  Generics.Collections,
+  REST.Types,
+  REST.Response.Adapter,
+  REST.Client,
+  Math,
+  FMX.Memo,
+  FMX.Media,
+  Windows,
+  Winapi.ShellAPI,
+  uExchangeDataHolder in 'uExchangeDataHolder.pas',
+  uRESTResponseHelper in 'uRESTResponseHelper.pas',
+  IdSMTP,
+  IdExplicitTLSClientServerBase,
+  IdMessage,
+  IdSSLOpenSSL;
+
+
+type
+  TCTColor = (Black = 0, Blue = 1, Green = 2, Cyan = 3, Red = 4, Magenta = 5, Brown = 6, LightGray = 7, DarkGray = 8,
+    LightBlue = 9, LightGreen = 10, LightCyan = 11, LightRed = 12, LightMagenta = 13, Yellow = 14, White = 15);
+
+
+
+  TMessage = packed record
+    t: TDateTime;
+    symbol: string[16];
+    rate: double;
+    interval: cardinal;
+    step: cardinal;
+  end;
+
+
+var
+  cliExchangeInfo: TRESTClient;
+  reqExchangeInfo: TRESTRequest;
+  rspExchangeInfo: TRESTResponse;
+
+  cliSymbolPrice: TRESTClient;
+  reqSymbolPrice: TRESTRequest;
+  rspSymbolPrice: TRESTResponse;
+
+  dataHolder: TExchangeDataHolder;
+  restReader: TRESTResponseReader;
+
+  fStopWatch:      TStopwatch;
+  fInterval:       double;
+  fStepIndex:      cardinal;
+  fTimeIndex:      double;
+  fPriceCheckTime: double;
+  fMessages:       TList<TMessage>;
+
+  fMailOn:    Boolean;
+  fMusicOn:   Boolean;
+  fLineCount: Integer;
+
+  memRules:     TMemo;
+  filterString: string;
+  strfavs:      TStringList;
+
+  // Mail
+  mSMTP:         TIdSMTP;
+  mMessage:      TIdMessage;
+  mSSLIOHandler: TIdSSLIOHandlerSocketOpenSSL;
+  mMailMessage:  string;
+
+  // Media
+  mPlayer: TMediaPlayer;
+
+
+
+procedure Print(text: string; color: TCTColor);
+var
+  TextAttr: Byte;
+begin
+  TextAttr := cardinal(color) and $0F;
+  SetConsoleTextAttribute(TTextRec(Output).Handle, TextAttr);
+
+  Write(text);
+end;
+
+
+
+procedure sendMail(header, msg: string);
+begin
+  if fMusicOn then
+  begin
+    if mPlayer <> nil then
+      mPlayer.Destroy;
+
+    mPlayer          := TMediaPlayer.Create(nil);
+    mPlayer.FileName := 'marimba.mp3';
+    mPlayer.Play;
+  end;
+
+  if fMailOn then
+  begin
+    if not mSMTP.Connected then
+      mSMTP.Connect;
+
+    if mSMTP.Connected then
+    begin
+      if mSMTP.Authenticate then
+      begin
+        mMessage.Body.Clear;
+        mMessage.Body.Add(msg);
+        mMessage.Subject := header;
+        mSMTP.Send(mMessage);
+      end;
+      mSMTP.Disconnect();
+    end;
+  end;
+end;
+
+
+
+procedure InitializeMail;
+begin
+  mSSLIOHandler := TIdSSLIOHandlerSocketOpenSSL.Create(nil);
+
+  mSMTP                             := TIdSMTP.Create(nil);
+  mSMTP.Host                        := 'smtp.gmail.com';
+  mSMTP.Port                        := 587;
+  mSMTP.IOHandler                   := mSSLIOHandler;
+  mSMTP.Username                    := 'crypto.fdemirdag@gmail.com';
+  mSMTP.Password                    := 'pass147963';
+  mSMTP.UseEhlo                     := true;
+  mSMTP.ValidateAuthLoginCapability := true;
+  mSMTP.UseTLS                      := IdExplicitTLSClientServerBase.utUseExplicitTLS;
+  mSMTP.AuthType                    := satDefault;
+
+  mSSLIOHandler.Host := 'smtp.gmail.com';
+  mSSLIOHandler.Port := 587;
+
+  mMessage := TIdMessage.Create(nil);
+  mMessage.Recipients.Add;
+  mMessage.Recipients[0].Address := 'crypto.fdemirdag@gmail.com';
+  mMessage.Recipients[0].Domain  := 'gmail.com';
+  mMessage.Recipients[0].text    := 'crypto.fdemirdag@gmail.com';
+  mMessage.Recipients[0].User    := 'crypto.fdemirdag';
+end;
+
+
+
+procedure InitializeREST;
+begin
+  cliExchangeInfo          := TRESTClient.Create('https://api3.binance.com/api/v3/exchangeInfo');
+  reqExchangeInfo          := TRESTRequest.Create(nil);
+  rspExchangeInfo          := TRESTResponse.Create(nil);
+  reqExchangeInfo.Client   := cliExchangeInfo;
+  reqExchangeInfo.Response := rspExchangeInfo;
+
+  cliSymbolPrice          := TRESTClient.Create('https://api3.binance.com/api/v3/ticker/price');
+  reqSymbolPrice          := TRESTRequest.Create(nil);
+  rspSymbolPrice          := TRESTResponse.Create(nil);
+  reqSymbolPrice.Client   := cliSymbolPrice;
+  reqSymbolPrice.Response := rspSymbolPrice;
+end;
+
+
+
+procedure InitializeDataHolder;
+var
+  dataAva:                       Boolean;
+  symbol, baseAsset, quoteAsset: string;
+  id:                            Integer;
+begin
+  if dataHolder <> nil then
+    dataHolder.Destroy;
+  dataHolder := TExchangeDataHolder.Create('binance');
+
+  reqExchangeInfo.Execute;
+
+  if restReader <> nil then
+    restReader.Destroy;
+
+  restReader := TRESTResponseReader.Create(rspExchangeInfo.Content);
+
+  id := 0;
+  repeat
+    dataAva := true;
+    dataAva := dataAva and restReader.GetNextValueAsString('symbols[' + inttostr(id) + '].symbol', symbol);
+    dataAva := dataAva and restReader.GetNextValueAsString('symbols[' + inttostr(id) + '].baseAsset', baseAsset);
+    dataAva := dataAva and restReader.GetNextValueAsString('symbols[' + inttostr(id) + '].quoteAsset', quoteAsset);
+    Inc(id);
+    if dataAva and EndsStr('USDT', symbol) then
+    begin
+      dataHolder.AddMarket(symbol, baseAsset, quoteAsset);
+      Print(format('%24s', [symbol]), TCTColor.LightGreen);
+    end;
+  until not dataAva;
+
+  fMessages := TList<TMessage>.Create();
+end;
+
+
+
+procedure InitializeRules;
+var
+  strInterval: string;
+begin
+  memRules := TMemo.Create(nil);
+  memRules.Lines.LoadFromFile('rules.txt');
+  filterString := memRules.Lines[0];
+
+  if memRules.Lines[1] = 'mailon' then
+    fMailOn := true
+  else
+    fMailOn := false;
+
+  if memRules.Lines[2] = 'musicon' then
+    fMusicOn := true
+  else
+    fMusicOn := false;
+
+  strInterval := memRules.Lines[3];
+  fInterval   := StrToFloat(strInterval);
+
+  strfavs := TStringList.Create;
+  strfavs.Clear;
+  strfavs.Delimiter       := '#';
+  strfavs.StrictDelimiter := true;
+  strfavs.DelimitedText   := filterString;
+end;
+
+
+
+procedure UpdatePrices;
+var
+  dataAva:          Boolean;
+  id:               Integer;
+  symbol, strPrice: string;
+  price:            double;
+begin
+  reqSymbolPrice.Execute;
+
+  restReader.SetResponse(rspSymbolPrice.Content);
+
+  id := 0;
+  repeat
+    dataAva := true;
+    dataAva := dataAva and restReader.GetNextValueAsString('[' + inttostr(id) + '].symbol', symbol);
+    dataAva := dataAva and restReader.GetNextValueAsString('[' + inttostr(id) + '].price', strPrice);
+    Inc(id);
+    price := StrToFloat(strPrice);
+
+    dataHolder.NewMarketData(symbol, price);
+  until not dataAva;
+
+  dataHolder.ApplyNewData;
+end;
+
+
+
+procedure StartTimer;
+begin
+  fInterval  := 5000.0;
+  fStepIndex := 0;
+  fStopWatch.Start;
+end;
+
+
+
+function GetElapsedTime: double;
+begin
+  if fStopWatch.IsHighResolution then
+  begin
+    result := fStopWatch.Elapsed.Ticks / fStopWatch.Elapsed.TicksPerMillisecond;
+  end
+  else
+  begin
+    result := fStopWatch.ElapsedMilliseconds;
+  end;
+end;
+
+
+
+procedure DelayTimer;
+var
+  idleTime: double;
+begin
+  idleTime := fInterval * fStepIndex - GetElapsedTime;
+  if idleTime < 0 then
+    idleTime := 0.0;
+
+{$IF Defined(MSWINDOWS)}
+  Sleep(round(idleTime));
+{$ELSEIF Defined(POSIX)}
+  usleep(idleTime * 1000);
+{$ENDIF POSIX}
+end;
+
+
+
+function FloatFormatAsString(value: double; fraction: cardinal): string;
+var
+  str:        string;
+  loc, cfraq: Integer;
+  I:          Integer;
+begin
+  str := FloatToStr(value);
+  loc := Pos('.', str);
+  if loc = 0 then
+  begin
+    str := str + '.';
+    loc := length(str);
+  end;
+
+  cfraq := length(str) - loc;
+  if cfraq <= fraction then
+  begin
+    for I := cfraq to fraction - 1 do
+      str := str + '0';
+  end
+  else
+    SetLength(str, loc + fraction);
+
+  result := str;
+end;
+
+
+
+procedure WriteCoin(coin: string);
+var
+  currValue, prevValue:                        double;
+  strValue:                                    string;
+  val1min, val5min, val15min, val30min, val1h: double;
+  rat1min, rat5min, rat15min, rat30min, rat1h: double;
+  strrat1, strrat5, strrat15, strrat60:        string;
+  clrInc, clrDec, clrNat:                      TCTColor;
+begin
+  clrInc := TCTColor.LightGreen;
+  clrDec := TCTColor.LightRed;
+  clrNat := TCTColor.White;
+
+  if dataHolder.GetDataDepth >= 1 then
+  begin
+    currValue := dataHolder.GetMarketData(coin + 'USDT', 0);
+    prevValue := dataHolder.GetMarketData(coin + 'USDT', 1);
+
+    if prevValue > currValue then
+      Print(format('%6s  %10s ', [coin, FloatFormatAsString(currValue, 4)]), clrDec)
+    else if prevValue = currValue then
+      Print(format('%6s  %10s ', [coin, FloatFormatAsString(currValue, 4)]), clrNat)
+    else
+      Print(format('%6s  %10s ', [coin, FloatFormatAsString(currValue, 4)]), clrInc);
+  end
+  else
+    Print(format('%6s  %10s ', [coin, '0.0000']), clrNat);
+
+  if dataHolder.GetDataDepth > Trunc(60000.0 / fInterval) then
+  begin
+    val1min := dataHolder.GetMarketData(coin + 'USDT', Trunc(60000.0 / fInterval));
+    rat1min := (currValue - val1min) / val1min * 100.0;
+
+    if rat1min = 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat1min, 2)]), clrNat)
+    else if rat1min > 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat1min, 2)]), clrInc)
+    else
+      Print(format('%7s ', [FloatFormatAsString(rat1min, 2)]), clrDec);
+  end
+  else
+    Print(format('%7s ', ['0.00']), clrNat);
+
+  if dataHolder.GetDataDepth > Trunc(300000.0 / fInterval) then
+  begin
+    val5min := dataHolder.GetMarketData(coin + 'USDT', Trunc(300000.0 / fInterval));
+    rat5min := (currValue - val5min) / val5min * 100.0;
+
+    if rat5min = 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat5min, 2)]), clrNat)
+    else if rat5min > 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat5min, 2)]), clrInc)
+    else
+      Print(format('%7s ', [FloatFormatAsString(rat5min, 2)]), clrDec);
+  end
+  else
+    Print(format('%7s ', ['0.00']), clrNat);
+
+  if dataHolder.GetDataDepth > Trunc(900000.0 / fInterval) then
+  begin
+    val15min := dataHolder.GetMarketData(coin + 'USDT', Trunc(900000.0 / fInterval));
+    rat15min := (currValue - val15min) / val15min * 100.0;
+
+    if rat15min = 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat15min, 2)]), clrNat)
+    else if rat15min > 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat15min, 2)]), clrInc)
+    else
+      Print(format('%7s ', [FloatFormatAsString(rat15min, 2)]), clrDec);
+  end
+  else
+    Print(format('%7s ', ['0.00']), clrNat);
+
+  if dataHolder.GetDataDepth > Trunc(1800000.0 / fInterval) then
+  begin
+    val30min := dataHolder.GetMarketData(coin + 'USDT', Trunc(1800000.0 / fInterval));
+    rat30min := (currValue - val30min) / val30min * 100.0;
+
+    if rat30min = 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat30min, 2)]), clrNat)
+    else if rat30min > 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat30min, 2)]), clrInc)
+    else
+      Print(format('%7s ', [FloatFormatAsString(rat30min, 2)]), clrDec);
+  end
+  else
+    Print(format('%7s ', ['0.00']), clrNat);
+
+  if dataHolder.GetDataDepth > Trunc(3600000.0 / fInterval) then
+  begin
+    val1h := dataHolder.GetMarketData(coin + 'USDT', Trunc(30000.0 / fInterval));
+    rat1h := (currValue - val1h) / val1h * 100.0;
+
+    if rat1h = 0.0 then
+      Print(format('%7s |', [FloatFormatAsString(rat1h, 2)]), clrNat)
+    else if rat1h > 0.0 then
+      Print(format('%7s |', [FloatFormatAsString(rat1h, 2)]), clrInc)
+    else
+      Print(format('%7s |', [FloatFormatAsString(rat1h, 2)]), clrDec);
+  end
+  else
+    Print(format('%7s |', ['0.00']), clrNat);
+end;
+
+
+
+function GetIntervalStr(int: cardinal): string;
+var
+  intervalTime: cardinal;
+begin
+  intervalTime := Trunc(int * fInterval / 1000);
+
+  if (intervalTime mod 60 = 0) and (intervalTime mod 3600 <> 0) then
+    result := inttostr(intervalTime div 60) + ' mins '
+  else if intervalTime mod 3600 = 0 then
+    result := inttostr(intervalTime div 3600) + ' hrs '
+  else
+    result := inttostr(intervalTime) + ' secs ';
+end;
+
+
+
+procedure checkRule(coin, condition: string; value: double; offset: cardinal);
+var
+  current, prev:         double;
+  ratio:                 double;
+  time, mailMsg, header: string;
+  currentTime:           TDateTime;
+  msg:                   TMessage;
+begin
+  current := dataHolder.GetMarketData(coin + 'USDT', 0);
+
+  if (LowerCase(condition) = 'change') and (dataHolder.GetDataDepth > (offset + 1)) then
+  begin
+    prev  := dataHolder.GetMarketData(coin + 'USDT', offset);
+    ratio := (current - prev) * 100.0 / prev;
+
+    if abs(ratio) >= value then
+    begin
+      msg.t        := now();
+      msg.symbol   := coin;
+      msg.rate     := round(ratio * 100) / 100;
+      msg.interval := offset;
+      msg.step     := fStepIndex;
+      fMessages.Add(msg);
+
+      if msg.rate > 0.0 then
+      begin
+        mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' raised ' +
+          FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
+      end
+      else
+      begin
+        mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' dropped ' +
+          FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
+      end;
+    end;
+  end;
+end;
+
+
+
+procedure parseRule(rule: string);
+var
+  strRule:                        TStringList;
+  coin, condition, sValue:        string;
+  sInterval, sAlertLevel, sEmail: string;
+  value:                          double;
+  interval:                       cardinal;
+  iCoin:                          string;
+  I:                              Integer;
+begin
+  strRule := TStringList.Create;
+  strRule.Clear;
+  strRule.Delimiter       := ' ';
+  strRule.StrictDelimiter := true;
+  strRule.DelimitedText   := rule;
+
+  if strRule.Count >= 2 then
+  begin
+    coin      := strRule[0];
+    condition := strRule[1];
+    if condition = 'value' then
+    begin
+      sValue      := strRule[2];
+      sEmail      := strRule[3];
+      sInterval   := '0';
+      sAlertLevel := '0';
+    end
+    else if (condition = 'change') and (strRule.Count = 4) then
+    begin
+      sValue    := strRule[2];
+      sInterval := strRule[3];
+    end;
+
+    value    := StrToFloat(sValue);
+    interval := strToInt(sInterval);
+
+    if coin = 'FAV' then
+    begin
+      for I := 0 to dataHolder.GetMarketCount - 1 do
+      begin
+        iCoin := dataHolder.GetMarket(I).coin;
+        if filterString.Contains('#' + iCoin + '#') then
+          checkRule(iCoin, condition, value, interval);
+      end;
+    end
+    else if coin = 'ANY' then
+    begin
+      for I := 0 to dataHolder.GetMarketCount - 1 do
+      begin
+        iCoin := dataHolder.GetMarket(I).coin;
+        checkRule(iCoin, condition, value, interval);
+      end;
+    end
+    else
+      checkRule(coin, condition, value, interval);
+  end;
+end;
+
+
+
+procedure ParseRules;
+var
+  I: Integer;
+begin
+  mMailMessage := '';
+  for I        := 4 to memRules.Lines.Count - 1 do
+  begin
+    parseRule(memRules.Lines[I]);
+  end;
+
+  if mMailMessage <> '' then
+  begin
+    sendMail('Crypto alert ' + TimeToStr(now), mMailMessage);
+  end;
+end;
+
+
+
+procedure WriteMessage(index: cardinal);
+var
+  msg:                        TMessage;
+  color:                      TCTColor;
+  text, intervalstr, timestr: string;
+begin
+  msg := fMessages[index];
+
+  timestr := TimeToStr(msg.t);
+
+  if msg.rate < 0.0 then
+  begin
+    if msg.step < fStepIndex - 5 then color := TCTColor.Red else color := TCTColor.LightRed;
+    text  := ' lost ';
+  end
+  else
+  begin
+    if msg.step < fStepIndex - 5 then color := TCTColor.Green else color := TCTColor.LightGreen;
+    text  := ' gained ';
+  end;
+
+  intervalstr := GetIntervalStr(msg.interval);
+
+  Print(' ' + timestr + ': ' + msg.symbol + text + FloatToStr(msg.rate) + ' in ' + intervalstr, color);
+end;
+
+
+
+procedure UpdateScreen;
+var
+  I: Integer;
+begin
+  Print(' ' + #13 + #10, TCTColor.White);
+  Print(' Coin     Value     1 min   5 min   15min   30min    1 h   |' + #13 + #10, TCTColor.White);
+  Print('------ ----------- ------- ------- ------- ------- ------- |' + #13 + #10, TCTColor.White);
+
+  while fMessages.Count > fLineCount do
+    fMessages.Delete(0);
+
+  for I := 0 to fLineCount do
+  begin
+    if I < strfavs.Count - 2 then
+      WriteCoin(strfavs[I + 1])
+    else
+      Print('                                                           |', TCTColor.Black);
+
+    if I < fMessages.Count then
+      WriteMessage(I);
+
+    Print('' + #13 + #10, TCTColor.Black);
+  end;
+
+  Print(DateToStr(now) + ' ' + TimeToStr(now) + ': ' + 'Check Time ' + FloatToStr(round(fPriceCheckTime)) + ' msec' +
+    #13 + #10, TCTColor.Cyan);
+
+  if fMailOn then
+    Print('[    Mail On    ] ', TCTColor.LightGreen)
+  else
+    Print('[    Mail Off   ] ', TCTColor.LightRed);
+
+  if fMusicOn then
+    Print('[   Alert On    ] ', TCTColor.LightGreen)
+  else
+    Print('[   Alert Off   ] ', TCTColor.LightRed);
+
+  Print('Interval: ', TCTColor.White);
+  Print(FloatToStr(fInterval), TCTColor.Magenta);
+  Print(' ms', TCTColor.White);
+end;
+
+
+
+procedure checkKeys;
+begin
+  if word(GetAsyncKeyState(65)) > 1 then
+    fMusicOn := not fMusicOn;
+
+  if word(GetAsyncKeyState(77)) > 1 then
+    fMusicOn := not fMusicOn;
+
+  if word(GetAsyncKeyState(VK_F1)) > 1 then
+    fLineCount := Max(24, fLineCount - 1);
+
+  if word(GetAsyncKeyState(VK_F2)) > 1 then
+    fLineCount := Min(48, fLineCount + 1);
+end;
+
+
+
+begin
+  InitializeREST;
+  InitializeDataHolder;
+  InitializeRules;
+  InitializeMail;
+
+  fLineCount := 36;
+
+  StartTimer;
+  fStepIndex := 0;
+  repeat
+    try
+      fTimeIndex := GetElapsedTime;
+      UpdatePrices;
+      fPriceCheckTime := GetElapsedTime - fTimeIndex;
+      ParseRules;
+      UpdateScreen;
+
+      Inc(fStepIndex);
+      DelayTimer;
+      checkKeys;
+    except
+      on E: Exception do
+        Writeln(E.ClassName, ': ', E.Message);
+    end;
+  until false;
+
+
+
+end.

@@ -1,0 +1,73 @@
+unit uRESTResponseHelper;
+
+
+
+interface
+
+
+
+uses
+  System.Classes, System.JSON.Readers, System.JSON.Types;
+
+
+type
+  TRESTResponseReader = class
+  private
+    jsonReader: TJSONTextReader;
+    textReader: TStringReader;
+    s    : string;
+
+  protected
+  public
+    constructor Create(response: string);
+
+    function GetAttributeName: string;
+    procedure SetResponse(response: string);
+
+  end;
+
+
+
+implementation
+
+
+
+{ TRESTResponseReader }
+
+
+
+constructor TRESTResponseReader.Create(response: string);
+begin
+  SetResponse(response);
+end;
+
+
+
+function TRESTResponseReader.GetAttributeName: string;
+begin
+
+end;
+
+
+
+procedure TRESTResponseReader.SetResponse(response: string);
+var
+  token: TJsonToken;
+begin
+  if textReader <> nil then
+    textReader.Destroy;
+  textReader := TStringReader.Create(response);
+
+  if jsonReader <> nil then
+    jsonReader.Destroy;
+  jsonReader := TJSONTextReader.Create(textReader);
+
+  jsonReader.Read;
+  token := jsonReader.TokenType;
+  jsonReader.Read;
+  token := jsonReader.TokenType;
+end;
+
+
+
+end.

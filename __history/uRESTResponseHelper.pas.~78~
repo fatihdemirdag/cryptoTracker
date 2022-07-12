@@ -1,0 +1,101 @@
+unit uRESTResponseHelper;
+
+
+
+interface
+
+
+
+uses
+  System.Classes, System.JSON.Readers, System.JSON.Types;
+
+
+type
+  TNodeType = (ntString, ntNumber, ntArrayOfString);
+
+
+  TNode = packed record
+    nodeName: string[32];
+    nodeType: TNodeType;
+    data: Pointer;
+  end;
+
+
+  TRESTResponseReader = class
+  private
+    jsonReader: TJSONTextReader;
+    textReader: TStringReader;
+
+    function GotoNext(path: string): boolean;
+  protected
+  public
+    constructor Create(response: string);
+
+    function GetValueAsDouble(path: string): Double;
+    function GetValueAsInteger(path: string): Integer;
+    function GetValueAsString(path: string): string;
+    procedure SetResponse(response: string);
+
+  end;
+
+
+
+implementation
+
+
+
+{ TRESTResponseReader }
+
+
+
+constructor TRESTResponseReader.Create(response: string);
+begin
+  SetResponse(response);
+end;
+
+
+
+function TRESTResponseReader.GetValueAsDouble(path: string): Double;
+begin
+
+end;
+
+function TRESTResponseReader.GetValueAsInteger(path: string): Integer;
+begin
+
+end;
+
+function TRESTResponseReader.GetValueAsString(path: string): string;
+begin
+
+end;
+
+procedure TRESTResponseReader.GotoNext(path: string);
+var
+  readResult: Boolean;
+begin
+  result := '';
+  repeat
+    readResult := jsonReader.Read;
+  until ((jsonReader.TokenType = TJsonToken.PropertyName) or (readResult = false));
+
+  if readResult <> false then
+    result := jsonReader.Path;
+end;
+
+procedure TRESTResponseReader.SetResponse(response: string);
+var
+  token: TJsonToken;
+begin
+  if textReader <> nil then
+    textReader.Destroy;
+  textReader := TStringReader.Create(response);
+
+  if jsonReader <> nil then
+    jsonReader.Destroy;
+  jsonReader := TJSONTextReader.Create(textReader);
+end;
+
+
+
+end.

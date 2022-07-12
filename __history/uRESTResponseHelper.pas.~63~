@@ -1,0 +1,102 @@
+unit uRESTResponseHelper;
+
+
+
+interface
+
+
+
+uses
+  System.Classes, System.JSON.Readers, System.JSON.Types;
+
+
+type
+  TNodeType = (ntString, ntNumber, ntArrayOfString);
+
+
+  TNode = packed record
+    nodeName: string[32];
+    nodeType: TNodeType;
+    data: Pointer;
+  end;
+
+
+  TRESTResponseReader = class
+  private
+
+    jsonReader: TJSONTextReader;
+    textReader: TStringReader;
+
+  protected
+  public
+    constructor Create(response: string);
+
+    function GetAttributeName: string;
+    function GoToNext: string;
+    procedure SetResponse(response: string);
+    procedure SetNodeName(name: string);
+
+  end;
+
+
+
+implementation
+
+
+
+{ TRESTResponseReader }
+
+
+
+constructor TRESTResponseReader.Create(response: string);
+begin
+  SetResponse(response);
+end;
+
+
+
+function TRESTResponseReader.GetAttributeName: string;
+begin
+
+end;
+
+
+
+function TRESTResponseReader.GoToNext: string;
+var
+  readResult: Boolean;
+begin
+  repeat
+    readResult := jsonReader.Read;
+  until ((jsonReader.TokenType <> TJsonToken.PropertyName) or (readResult = false));
+end;
+
+
+
+procedure TRESTResponseReader.SetNodeName(name: string);
+var
+  nodeName: string;
+begin
+  repeat
+    nodeName := GoToNext
+  until ;
+end;
+
+
+
+procedure TRESTResponseReader.SetResponse(response: string);
+var
+  token: TJsonToken;
+begin
+  if textReader <> nil then
+    textReader.Destroy;
+  textReader := TStringReader.Create(response);
+
+  if jsonReader <> nil then
+    jsonReader.Destroy;
+  jsonReader := TJSONTextReader.Create(textReader);
+end;
+
+
+
+end.

@@ -1,0 +1,90 @@
+unit uRESTResponseHelper;
+
+
+
+interface
+
+
+
+uses
+  System.Classes, System.StrUtils, System.WideStrUtils, System.WideStrings;
+
+
+type
+  TAttributeType = (atNumber, atString, atCompound);
+
+
+  TRESTResponseReader = class
+  private
+    s    : string;
+    index: integer;
+
+    function GetAttributeText: string;
+
+  protected
+  public
+    constructor Create(response: string);
+
+    function GetAttributeName: string;
+    function GetAttributeType: TAttributeType;
+    procedure SetResponse(response: string);
+
+  end;
+
+
+
+implementation
+
+
+
+{ TRESTResponseReader }
+
+
+
+constructor TRESTResponseReader.Create(response: string);
+begin
+  SetResponse(response);
+end;
+
+
+
+function TRESTResponseReader.GetAttributeName: string;
+begin
+
+end;
+
+
+
+function TRESTResponseReader.GetAttributeText: string;
+var
+  I, attribEndIndex: Integer;
+begin
+  for I := index to length(s) do
+  begin
+
+  end;
+end;
+
+
+
+function TRESTResponseReader.GetAttributeType: TAttributeType;
+begin
+
+end;
+
+
+
+procedure TRESTResponseReader.SetResponse(response: string);
+begin
+  index := -1;
+  if (response[1] = #123) and (response[length(response)] = #125) then
+  begin
+    s := Copy(response, 2, length(response) - 2);
+    index := 1;
+  end;
+
+end;
+
+
+
+end.

@@ -1,0 +1,89 @@
+unit uRESTResponseHelper;
+
+
+
+interface
+
+
+
+uses
+  System.Classes, System.JSON.Readers;
+
+
+type
+  TAttributeType = (atNumber, atString, atCompound);
+
+
+  TRESTResponseReader = class
+  private
+    jsonReader: TJSONReader;
+    s    : string;
+
+  protected
+  public
+    constructor Create(response: string);
+
+    function GetAttributeName: string;
+    function GetAttributeType: TAttributeType;
+    procedure SetResponse(response: string);
+
+  end;
+
+
+
+implementation
+
+
+
+{ TRESTResponseReader }
+
+
+
+constructor TRESTResponseReader.Create(response: string);
+begin
+  SetResponse(response);
+end;
+
+
+
+function TRESTResponseReader.GetAttributeName: string;
+begin
+
+end;
+
+
+
+function TRESTResponseReader.ParseNextAttribute: string;
+var
+  nameStartIndex
+begin
+
+end;
+
+
+
+function TRESTResponseReader.GetAttributeType: TAttributeType;
+begin
+
+end;
+
+
+
+procedure TRESTResponseReader.SetResponse(response: string);
+begin
+  if jsonReader <> nil then
+  begin
+
+  end;
+  index := -1;
+  if (response[1] = #123) and (response[length(response)] = #125) then
+  begin
+    s := Copy(response, 2, length(response) - 2);
+    index := 1;
+  end;
+
+end;
+
+
+
+end.

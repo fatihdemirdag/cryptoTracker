@@ -1,0 +1,56 @@
+unit uRESTResponseHelper;
+
+
+
+interface
+
+
+
+uses
+  System.Classes, System.StrUtils, System.WideStrUtils, System.WideStrings;
+
+
+type
+  TRESTResponseReader = class
+  private
+    s    : string;
+    index: integer;
+
+  protected
+  public
+    constructor Create(response: string);
+
+    procedure SetResponse(response: string);
+  end;
+
+
+
+implementation
+
+
+
+{ TRESTResponseReader }
+
+
+
+constructor TRESTResponseReader.Create(response: string);
+begin
+  SetResponse(response);
+end;
+
+
+
+procedure TRESTResponseReader.SetResponse(response: string);
+begin
+  index := -1;
+  if (response[1] = #123) and (response[length(response)] = #125) then
+  begin
+    s := Copy(response, 2, length(response) - 2);
+
+  end;
+
+end;
+
+
+
+end.
