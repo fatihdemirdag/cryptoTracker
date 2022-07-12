@@ -604,26 +604,26 @@ begin
 
   if msg.rate < 0.0 then
   begin
-    if msg.step < fStepIndex - 90 then
-      color := TCTColor.DarkGray
+    if msg.step < fStepIndex - 1 then
+      color := TCTColor.White
     else if msg.step < fStepIndex - 15 then
-      color := TCTColor.Red
-    else if msg.step < fStepIndex - 1 then
       color := TCTColor.LightRed
+    else if msg.step < fStepIndex - 90 then
+      color := TCTColor.Red
     else
-      color := TCTColor.White;
+      color := TCTColor.DarkGray;
     text    := ' lost ';
   end
   else
   begin
-    if msg.step < fStepIndex - 90 then
-      color := TCTColor.DarkGray
+    if msg.step < fStepIndex - 1 then
+      color := TCTColor.White
     else if msg.step < fStepIndex - 15 then
-      color := TCTColor.Green
-    else if msg.step < fStepIndex - 1 then
       color := TCTColor.LightGreen
+    else if msg.step < fStepIndex - 90 then
+      color := TCTColor.Green
     else
-      color := TCTColor.White;
+      color := TCTColor.DarkGray;
     text    := ' gained ';
   end;
 
@@ -640,18 +640,20 @@ var
   I: Integer;
 begin
   Print(' ' + #13 + #10, TCTColor.White);
-  Print('  Coin         Value        1 min   5 min   15min   30min    1 h   ' + #13 + #10, TCTColor.White);
-  Print('-------- ----------------- ------- ------- ------- ------- ------- ' + #13 + #10, TCTColor.White);
+  Print('  Coin         Value        1 min   5 min   15min   30min    1 h                                                    '
+      + #13 + #10, TCTColor.White);
+  Print('-------- ----------------- ------- ------- ------- ------- -------   -----------------------------------------------'
+      + #13 + #10, TCTColor.White);
 
   while fMessages.Count > fLineCount do
     fMessages.Delete(0);
 
   for I := 0 to fLineCount do
   begin
-    if I < strfavs.Count - 2 then
-      WriteCoin(strfavs[I + 1])
+    if (I div 2 < strfavs.Count - 2) and (I mod 2 = 0) then
+      WriteCoin(strfavs[I div 2 + 1])
     else
-      Print('                                                                   |', TCTColor.Black);
+      Print('                                                                   |', TCTColor.White);
 
     if I < fMessages.Count then
       WriteMessage(I);
