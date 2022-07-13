@@ -61,7 +61,7 @@ var
 
   fMailOn   : Boolean;
   fMusicOn  : Boolean;
-  fLineCount: Integer;
+  fLineCount: integer;
 
   memRules    : TMemo;
   filterString: string;
@@ -95,12 +95,9 @@ begin
   if fMusicOn then
   begin
     if mPlayer <> nil then
-      mPlayer.Destroy;
-
-    mPlayer          := TMediaPlayer.Create(nil);
-    mPlayer.FileName := 'bimp.mp3';
-    mPlayer.Volume   := 25;
-    mPlayer.Play;
+    begin
+      mPlayer.Play;
+    end;
   end;
 
   if fMailOn then
@@ -154,7 +151,7 @@ end;
 
 procedure InitializeREST;
 var
-  I       : Integer;
+  I       : integer;
   strParam: string;
 begin
   cliExchangeInfo          := TRESTClient.Create('https://api3.binance.com/api/v3/exchangeInfo');
@@ -169,8 +166,6 @@ begin
   reqSymbolPrice.Client   := cliSymbolPrice;
   reqSymbolPrice.Response := rspSymbolPrice;
 
-
-
   strParam := '[';
   for I    := 1 to strfavs.Count - 2 do
   begin
@@ -182,6 +177,10 @@ begin
 
   reqSymbolPrice.Params.AddItem('symbols', strParam, TRestRequestParameterKind.pkGETorPOST, [poDoNotEncode],
       TRestContentType.ctTEXT_PLAIN);
+
+  mPlayer          := TMediaPlayer.Create(nil);
+  mPlayer.FileName := 'bimp.mp3';
+  mPlayer.Volume   := 25;
 end;
 
 
@@ -190,7 +189,7 @@ procedure InitializeDataHolder;
 var
   dataAva                      : Boolean;
   symbol, baseAsset, quoteAsset: string;
-  id                           : Integer;
+  id                           : integer;
 begin
   if dataHolder <> nil then
     dataHolder.Destroy;
@@ -257,7 +256,7 @@ end;
 procedure UpdatePrices;
 var
   dataAva         : Boolean;
-  id              : Integer;
+  id              : integer;
   symbol, strPrice: string;
   price           : double;
 begin
@@ -324,8 +323,8 @@ end;
 function FloatFormatAsString(value: double; fraction: cardinal): string;
 var
   str       : string;
-  loc, cfraq: Integer;
-  I         : Integer;
+  loc, cfraq: integer;
+  I         : integer;
 begin
   str := FloatToStrF(value, TFloatFormat.ffNumber, fraction, 8);
   loc := Pos('.', str);
@@ -451,12 +450,6 @@ begin
   end
   else
     Print(format('%7s |', ['0.00']), clrNat);
-
-  { if dataHolder.GetDataDepth > 1 then
-    begin
-    Print(format('%10s |', [FloatFormatAsString(predValue, 8)]), clrNat);
-    Print(format('%7s |', [FloatFormatAsString(predAcc, 2)]), clrNat);
-    end }
 end;
 
 
@@ -523,7 +516,7 @@ var
   value                         : double;
   interval                      : cardinal;
   iCoin                         : string;
-  I                             : Integer;
+  I                             : integer;
 begin
   strRule := TStringList.Create;
   strRule.Clear;
@@ -577,7 +570,7 @@ end;
 
 procedure ParseRules;
 var
-  I: Integer;
+  I: integer;
 begin
   mMailMessage := '';
 
@@ -639,7 +632,7 @@ end;
 
 procedure UpdateScreen;
 var
-  I: Integer;
+  I: integer;
 begin
   Print(' ' + #13 + #10, TCTColor.White);
   Print('  Coin         Value        1 min   5 min   15min   30min    1 h                                                    '
@@ -729,12 +722,13 @@ begin
   InitializeDataHolder;
   InitializeMail;
 
-  // fLineCount := 36;
-
   StartTimer;
   fStepIndex := 0;
   repeat
     try
+      if mPlayer <> nil then
+        mPlayer.Stop;
+
       fTimeIndex := GetElapsedTime;
       UpdatePrices;
       fPriceCheckTime := GetElapsedTime - fTimeIndex;
