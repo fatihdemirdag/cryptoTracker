@@ -29,7 +29,7 @@ uses
 
 type
   TCTColor = (Black = 0, Blue = 1, Green = 2, Cyan = 3, Red = 4, Magenta = 5, Brown = 6, LightGray = 7, DarkGray = 8,
-    LightBlue = 9, LightGreen = 10, LightCyan = 11, LightRed = 12, LightMagenta = 13, Yellow = 14, White = 15);
+      LightBlue = 9, LightGreen = 10, LightCyan = 11, LightRed = 12, LightMagenta = 13, Yellow = 14, White = 15);
 
 
   TMessage = packed record
@@ -37,6 +37,7 @@ type
     symbol: string[16];
     rate: double;
     interval: cardinal;
+    step: integer;
   end;
 
 var
@@ -53,13 +54,13 @@ var
 
   fStopWatch     : TStopwatch;
   fInterval      : double;
-  fStepIndex     : cardinal;
+  fStepIndex     : integer;
   fTimeIndex     : double;
   fPriceCheckTime: double;
   fMessages      : TList<TMessage>;
 
-  fMailOn : Boolean;
-  fMusicOn: Boolean;
+  fMailOn   : Boolean;
+  fMusicOn  : Boolean;
   fLineCount: Integer;
 
   memRules    : TMemo;
@@ -97,7 +98,8 @@ begin
       mPlayer.Destroy;
 
     mPlayer          := TMediaPlayer.Create(nil);
-    mPlayer.FileName := 'marimba.mp3';
+    mPlayer.FileName := 'bimp.mp3';
+    mPlayer.Volume   := 25;
     mPlayer.Play;
   end;
 
@@ -151,6 +153,9 @@ end;
 
 
 procedure InitializeREST;
+var
+  I       : Integer;
+  strParam: string;
 begin
   cliExchangeInfo          := TRESTClient.Create('https://api3.binance.com/api/v3/exchangeInfo');
   reqExchangeInfo          := TRESTRequest.Create(nil);
@@ -163,6 +168,18 @@ begin
   rspSymbolPrice          := TRESTResponse.Create(nil);
   reqSymbolPrice.Client   := cliSymbolPrice;
   reqSymbolPrice.Response := rspSymbolPrice;
+
+  strParam := '[';
+  for I    := 1 to strfavs.Count - 2 do
+  begin
+    if I <> 1 then
+      strParam := strParam + ',';
+    strParam   := strParam + '"' + strfavs[I] + 'USDT' + '"';
+  end;
+  strParam := strParam + ']';
+
+  reqSymbolPrice.Params.AddItem('symbols', strParam, TRestRequestParameterKind.pkGETorPOST, [poDoNotEncode],
+      TRestContentType.ctTEXT_PLAIN);
 end;
 
 
@@ -224,6 +241,8 @@ begin
   strInterval := memRules.Lines[3];
   fInterval   := StrToFloat(strInterval);
 
+  fLineCount := StrToInt(memRules.Lines[4]);
+
   strfavs := TStringList.Create;
   strfavs.Clear;
   strfavs.Delimiter       := '#';
@@ -262,7 +281,7 @@ end;
 
 procedure StartTimer;
 begin
-  fInterval  := 5000.0;
+  // fInterval  := 5000.0;
   fStepIndex := 0;
   fStopWatch.Start;
 end;
@@ -306,7 +325,7 @@ var
   loc, cfraq: Integer;
   I         : Integer;
 begin
-  str := FloatToStr(value);
+  str := FloatToStrF(value, TFloatFormat.ffNumber, fraction, 8);
   loc := Pos('.', str);
   if loc = 0 then
   begin
@@ -330,31 +349,31 @@ end;
 
 procedure WriteCoin(coin: string);
 var
-  currValue, prevValue                : double;
-  strValue                            : string;
-  val1min, val5min, val15min, val1h   : double;
-  rat1min, rat5min, rat15min, rat1h   : double;
-  strrat1, strrat5, strrat15, strrat60: string;
-  clrInc, clrDec, clrNat              : TCTColor;
+  currValue, prevValue, predValue, predAcc   : double;
+  val1min, val5min, val15min, val30min, val1h: double;
+  rat1min, rat5min, rat15min, rat30min, rat1h: double;
+  clrInc, clrDec, clrNat                     : TCTColor;
 begin
-  clrInc := TCTColor.Green;
-  clrDec := TCTColor.Red;
+  clrInc := TCTColor.LightGreen;
+  clrDec := TCTColor.LightRed;
   clrNat := TCTColor.White;
 
   if dataHolder.GetDataDepth >= 1 then
   begin
     currValue := dataHolder.GetMarketData(coin + 'USDT', 0);
     prevValue := dataHolder.GetMarketData(coin + 'USDT', 1);
+    predValue := dataHolder.GetMarketPrediction(coin + 'USDT', 0);
+    predAcc   := dataHolder.GetPredictionAccuracy(coin + 'USDT', 0);
 
     if prevValue > currValue then
-      Print(format('%6s  %10s ', [coin, FloatFormatAsString(currValue, 4)]), clrDec)
+      Print(format('%8s  %16s ', [coin, FloatFormatAsString(currValue, 8)]), clrDec)
     else if prevValue = currValue then
-      Print(format('%6s  %10s ', [coin, FloatFormatAsString(currValue, 4)]), clrNat)
+      Print(format('%8s  %16s ', [coin, FloatFormatAsString(currValue, 8)]), clrNat)
     else
-      Print(format('%6s  %10s ', [coin, FloatFormatAsString(currValue, 4)]), clrInc);
+      Print(format('%8s  %16s ', [coin, FloatFormatAsString(currValue, 8)]), clrInc);
   end
   else
-    Print(format('%6s  %10s ', [coin, '0.0000']), clrNat);
+    Print(format('%8s  %16s ', [coin, '0.00000000']), clrNat);
 
   if dataHolder.GetDataDepth > Trunc(60000.0 / fInterval) then
   begin
@@ -401,9 +420,24 @@ begin
   else
     Print(format('%7s ', ['0.00']), clrNat);
 
+  if dataHolder.GetDataDepth > Trunc(1800000.0 / fInterval) then
+  begin
+    val30min := dataHolder.GetMarketData(coin + 'USDT', Trunc(1800000.0 / fInterval));
+    rat30min := (currValue - val30min) / val30min * 100.0;
+
+    if rat30min = 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat30min, 2)]), clrNat)
+    else if rat30min > 0.0 then
+      Print(format('%7s ', [FloatFormatAsString(rat30min, 2)]), clrInc)
+    else
+      Print(format('%7s ', [FloatFormatAsString(rat30min, 2)]), clrDec);
+  end
+  else
+    Print(format('%7s ', ['0.00']), clrNat);
+
   if dataHolder.GetDataDepth > Trunc(3600000.0 / fInterval) then
   begin
-    val1h := dataHolder.GetMarketData(coin + 'USDT', Trunc(30000.0 / fInterval));
+    val1h := dataHolder.GetMarketData(coin + 'USDT', Trunc(3600000.0 / fInterval));
     rat1h := (currValue - val1h) / val1h * 100.0;
 
     if rat1h = 0.0 then
@@ -415,6 +449,12 @@ begin
   end
   else
     Print(format('%7s |', ['0.00']), clrNat);
+
+  { if dataHolder.GetDataDepth > 1 then
+    begin
+    Print(format('%10s |', [FloatFormatAsString(predValue, 8)]), clrNat);
+    Print(format('%7s |', [FloatFormatAsString(predAcc, 2)]), clrNat);
+    end }
 end;
 
 
@@ -437,11 +477,9 @@ end;
 
 procedure checkRule(coin, condition: string; value: double; offset: cardinal);
 var
-  current, prev        : double;
-  ratio                : double;
-  time, mailMsg, header: string;
-  currentTime          : TDateTime;
-  msg                  : TMessage;
+  current, prev: double;
+  ratio        : double;
+  msg          : TMessage;
 begin
   current := dataHolder.GetMarketData(coin + 'USDT', 0);
 
@@ -456,17 +494,18 @@ begin
       msg.symbol   := coin;
       msg.rate     := round(ratio * 100) / 100;
       msg.interval := offset;
-      fMessages.Add(msg);
+      msg.step     := fStepIndex;
+      fMessages.Insert(0, msg);
 
       if msg.rate > 0.0 then
       begin
         mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' raised ' +
-          FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
+            FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
       end
       else
       begin
         mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' dropped ' +
-          FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
+            FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
       end;
     end;
   end;
@@ -508,7 +547,7 @@ begin
     end;
 
     value    := StrToFloat(sValue);
-    interval := strToInt(sInterval);
+    interval := StrToInt(sInterval) div Trunc(fInterval / 1000.0);
 
     if coin = 'FAV' then
     begin
@@ -539,7 +578,8 @@ var
   I: Integer;
 begin
   mMailMessage := '';
-  for I        := 4 to memRules.Lines.Count - 1 do
+
+  for I := 5 to memRules.Lines.Count - 1 do
   begin
     parseRule(memRules.Lines[I]);
   end;
@@ -564,18 +604,33 @@ begin
 
   if msg.rate < 0.0 then
   begin
-    color := TCTColor.LightRed;
-    text  := ' lost ';
+    if msg.step >= fStepIndex - 1 then
+      color := TCTColor.White
+    else if msg.step >= fStepIndex - 15 then
+      color := TCTColor.LightRed
+    else if msg.step >= fStepIndex - 90 then
+      color := TCTColor.Red
+    else
+      color := TCTColor.DarkGray;
+    text    := ' lost ';
   end
   else
   begin
-    color := TCTColor.LightGreen;
-    text  := ' gained ';
+    if msg.step >= fStepIndex - 1 then
+      color := TCTColor.White
+    else if msg.step >= fStepIndex - 15 then
+      color := TCTColor.LightGreen
+    else if msg.step >= fStepIndex - 90 then
+      color := TCTColor.Green
+    else
+      color := TCTColor.DarkGray;
+    text    := ' gained ';
   end;
 
   intervalstr := GetIntervalStr(msg.interval);
 
-  Print(' ' + timestr + ': ' + msg.symbol + text + FloatToStr(msg.rate) + ' in the last ' + intervalstr, color);
+  Print(' ' + timestr + ' [' + inttostr(msg.step) + ']: ' + msg.symbol + text + FloatToStr(msg.rate) + ' in ' +
+      intervalstr, color);
 end;
 
 
@@ -584,19 +639,21 @@ procedure UpdateScreen;
 var
   I: Integer;
 begin
-  Print('' + #13 + #10 + #13 + #10 + #13 + #10 + #13 + #10 + #13 + #10 + #13 + #10 + #13 + #10, TCTColor.Black);
-  Print(' Coin     Value     1 min   5 min   15min    1 h   |' + #13 + #10, TCTColor.White);
-  Print('------ ----------- ------- ------- ------- ------- |' + #13 + #10, TCTColor.White);
+  Print(' ' + #13 + #10, TCTColor.White);
+  Print('  Coin         Value        1 min   5 min   15min   30min    1 h                                                    '
+      + #13 + #10, TCTColor.White);
+  Print('-------- ----------------- ------- ------- ------- ------- -------   -----------------------------------------------'
+      + #13 + #10, TCTColor.White);
 
   while fMessages.Count > fLineCount do
     fMessages.Delete(0);
 
   for I := 0 to fLineCount do
   begin
-    if I < strfavs.Count - 2 then
-      WriteCoin(strfavs[I + 1])
+    if (I div 2 < strfavs.Count - 2) and (I mod 2 = 0) then
+      WriteCoin(strfavs[I div 2 + 1])
     else
-      Print('                                                   |', TCTColor.Black);
+      Print('                                                                   |', TCTColor.White);
 
     if I < fMessages.Count then
       WriteMessage(I);
@@ -605,7 +662,7 @@ begin
   end;
 
   Print(DateToStr(now) + ' ' + TimeToStr(now) + ': ' + 'Check Time ' + FloatToStr(round(fPriceCheckTime)) + ' msec' +
-    #13 + #10, TCTColor.Cyan);
+      #13 + #10, TCTColor.Cyan);
 
   if fMailOn then
     Print('[    Mail On    ] ', TCTColor.LightGreen)
@@ -619,35 +676,61 @@ begin
 
   Print('Interval: ', TCTColor.White);
   Print(FloatToStr(fInterval), TCTColor.Magenta);
-  Print(' ms', TCTColor.White);
+  Print(' ms ', TCTColor.White);
+
+  Print('    DataSize: ', TCTColor.White);
+  Print(inttostr(rspSymbolPrice.Content.length), TCTColor.Cyan);
+  Print(' bytes ', TCTColor.White);
+
+  Print('    Step: ', TCTColor.White);
+  Print(inttostr(fStepIndex), TCTColor.LightGray);
 end;
 
 
 
 procedure checkKeys;
 begin
-  if GetAsyncKeyState(65) > 0 then
+  if word(GetAsyncKeyState(65)) > 1 then
     fMusicOn := not fMusicOn;
 
-  if GetAsyncKeyState(77) > 0 then
+  if word(GetAsyncKeyState(77)) > 1 then
     fMusicOn := not fMusicOn;
 
-  if word(GetAsyncKeyState(VK_F1) > 1 then
+  if word(GetAsyncKeyState(VK_F1)) > 1 then
     fLineCount := Max(24, fLineCount - 1);
 
   if word(GetAsyncKeyState(VK_F2)) > 1 then
     fLineCount := Min(48, fLineCount + 1);
+
+  if word(GetAsyncKeyState(113)) > 1 then
+    exit;
+end;
+
+
+
+procedure cleanupMessages;
+var
+  I, firdFoundIndex: cardinal;
+begin
+  if fMessages.Count > 0 then
+  begin
+    for I := 0 to fMessages.Count - 1 do
+    begin
+      if fMessages[I].step < fStepIndex - (300 div Trunc(fInterval / 1000.0)) then
+        fMessages.DeleteRange(I, fMessages.Count - I);
+    end;
+  end;
 end;
 
 
 
 begin
+  InitializeRules;
   InitializeREST;
   InitializeDataHolder;
-  InitializeRules;
   InitializeMail;
 
-  fLineCount := 36;
+  // fLineCount := 36;
 
   StartTimer;
   fStepIndex := 0;
@@ -658,13 +741,16 @@ begin
       fPriceCheckTime := GetElapsedTime - fTimeIndex;
       ParseRules;
       UpdateScreen;
+      cleanupMessages;
 
       Inc(fStepIndex);
       DelayTimer;
-      CheckKeys;
+      checkKeys;
     except
       on E: Exception do
         Writeln(E.ClassName, ': ', E.Message);
     end;
   until false;
+
+
 end.

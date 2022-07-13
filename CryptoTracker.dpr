@@ -169,6 +169,8 @@ begin
   reqSymbolPrice.Client   := cliSymbolPrice;
   reqSymbolPrice.Response := rspSymbolPrice;
 
+
+
   strParam := '[';
   for I    := 1 to strfavs.Count - 2 do
   begin
@@ -644,9 +646,6 @@ begin
       + #13 + #10, TCTColor.White);
   Print('-------- ----------------- ------- ------- ------- ------- -------   -----------------------------------------------'
       + #13 + #10, TCTColor.White);
-
-  while fMessages.Count > fLineCount do
-    fMessages.Delete(0);
 
   for I := 0 to fLineCount do
   begin
