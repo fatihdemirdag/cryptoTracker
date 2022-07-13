@@ -5,10 +5,10 @@ interface
 
 
 uses
-  System.Generics.Collections;
+  System.Generics.Collections, System.SysUtils, FMX.Memo;
 
 const
-  DATA_LIMIT = 1800;
+  DATA_LIMIT = 7200;
 
 
 type
@@ -39,6 +39,7 @@ type
     function GetDataIndex(offset: cardinal): cardinal;
     function GetData(market: PMarket; dataOffset: cardinal): double;
     procedure CalculateKalman(Name: string);
+    procedure SaveData;
 
   protected
   public
@@ -96,7 +97,10 @@ begin
   fStartIndex   := fNewDataIndex;
   fNewDataIndex := fNewDataIndex + 1;
   if fNewDataIndex = DATA_LIMIT then
+  begin
     fNewDataIndex := 0;
+    SaveData;
+  end;
 
   if fEndIndex < 0 then
     fEndIndex := 0;
@@ -131,7 +135,8 @@ begin
       R := Q;
       K := (fMarkets[name].p[fStartIndex] + Q) * (1.0 / (fMarkets[name].p[fStartIndex] + Q) + R);
 
-      fMarkets[name].pred[fNewDataIndex] := fMarkets[name].pred[fStartIndex] + K * (fMarkets[name].value[fNewDataIndex] - fMarkets[name].pred[fStartIndex]);
+      fMarkets[name].pred[fNewDataIndex] := fMarkets[name].pred[fStartIndex] + K *
+          (fMarkets[name].value[fNewDataIndex] - fMarkets[name].pred[fStartIndex]);
       fMarkets[name].p[fNewDataIndex] := (1 - K) * fMarkets[name].p[fStartIndex];
     end;
   end;
@@ -267,6 +272,29 @@ begin
     fMarkets[name].value[fNewDataIndex] := value;
 
   CalculateKalman(name);
+end;
+
+
+
+procedure TExchangeDataHolder.SaveData;
+var
+  s: string;
+  memo: TMemo;
+  iMarket, iData: Integer;
+begin
+  for iMarket := 0 to fMarketList.Count - 1 do
+  begin
+    s := fMarketList[iMarket].Name;
+
+    for iData := 0 to DATA_LIMIT - 1 do
+    begin
+      s := s + floattostr(fMarketList[iMarket].value[iData]);
+    end;
+
+    memo.Lines.Add(s);
+  end;
+
+  memo.Lines.SaveToFile(DateToStr(Now) + ' ' + TimeToStr(Now) + '.txt');
 end;
 
 
