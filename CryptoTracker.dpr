@@ -16,21 +16,14 @@ uses
   REST.Client,
   Math,
   FMX.Memo,
-  FMX.Media,
   Windows,
   Winapi.ShellAPI,
   uExchangeDataHolder in 'uExchangeDataHolder.pas',
   uRESTResponseHelper in 'uRESTResponseHelper.pas',
-  IdSMTP,
-  IdExplicitTLSClientServerBase,
-  IdMessage,
-  IdSSLOpenSSL;
+  uUtilityMethods in 'uUtilityMethods.pas';
 
 
 type
-  TCTColor = (Black = 0, Blue = 1, Green = 2, Cyan = 3, Red = 4, Magenta = 5, Brown = 6, LightGray = 7, DarkGray = 8,
-      LightBlue = 9, LightGreen = 10, LightCyan = 11, LightRed = 12, LightMagenta = 13, Yellow = 14, White = 15);
-
 
   TMessage = packed record
     t: TDateTime;
@@ -66,121 +59,91 @@ var
   memRules    : TMemo;
   filterString: string;
   strfavs     : TStringList;
-
-  // Mail
-  mSMTP        : TIdSMTP;
-  mMessage     : TIdMessage;
-  mSSLIOHandler: TIdSSLIOHandlerSocketOpenSSL;
-  mMailMessage : string;
-
-  // Media
-  mPlayer: TMediaPlayer;
+  fAllCoins   : Boolean;
 
 
 
-procedure Print(text: string; color: TCTColor);
-var
-  TextAttr: Byte;
+function getElapsedTime: double;
 begin
-  TextAttr := cardinal(color) and $0F;
-  SetConsoleTextAttribute(TTextRec(Output).Handle, TextAttr);
-
-  Write(text);
+  if fStopWatch.IsHighResolution then
+  begin
+    result := fStopWatch.Elapsed.Ticks / fStopWatch.Elapsed.TicksPerMillisecond;
+  end
+  else
+  begin
+    result := fStopWatch.ElapsedMilliseconds;
+  end;
 end;
 
 
 
-procedure sendMail(header, msg: string);
+procedure checkRule(coin, condition: string; value: double; offset: cardinal);
+var
+  current, prev: double;
+  ratio        : double;
+  msg          : TMessage;
 begin
-  if fMusicOn then
-  begin
-    if mPlayer <> nil then
-    begin
-      mPlayer.Play;
-    end;
-  end;
+  current := dataHolder.GetMarketData(coin + 'USDT', 0);
 
-  if fMailOn then
+  if (LowerCase(condition) = 'change') and (dataHolder.GetDataDepth > (offset + 1)) then
   begin
-    if not mSMTP.Connected then
-      mSMTP.Connect;
+    prev  := dataHolder.GetMarketData(coin + 'USDT', offset);
+    ratio := (current - prev) * 100.0 / prev;
 
-    if mSMTP.Connected then
+    if abs(ratio) >= value then
     begin
-      if mSMTP.Authenticate then
+      msg.t        := now();
+      msg.symbol   := coin;
+      msg.rate     := round(ratio * 100) / 100;
+      msg.interval := offset;
+      msg.step     := fStepIndex;
+      fMessages.Insert(0, msg);
+
+      if msg.rate > 0.0 then
       begin
-        mMessage.Body.Clear;
-        mMessage.Body.Add(msg);
-        mMessage.Subject := header;
-        mSMTP.Send(mMessage);
+        mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' raised ' +
+            FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval, fInterval) + #13 + #10;
+      end
+      else
+      begin
+        mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' dropped ' +
+            FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval, fInterval) + #13 + #10;
       end;
-      mSMTP.Disconnect();
     end;
   end;
 end;
 
 
 
-procedure InitializeMail;
+procedure cleanupMessages;
+var
+  I, firdFoundIndex: cardinal;
 begin
-  mSSLIOHandler := TIdSSLIOHandlerSocketOpenSSL.Create(nil);
-
-  mSMTP                             := TIdSMTP.Create(nil);
-  mSMTP.Host                        := 'smtp.gmail.com';
-  mSMTP.Port                        := 587;
-  mSMTP.IOHandler                   := mSSLIOHandler;
-  mSMTP.Username                    := 'crypto.fdemirdag@gmail.com';
-  mSMTP.Password                    := 'pass147963';
-  mSMTP.UseEhlo                     := true;
-  mSMTP.ValidateAuthLoginCapability := true;
-  mSMTP.UseTLS                      := IdExplicitTLSClientServerBase.utUseExplicitTLS;
-  mSMTP.AuthType                    := satDefault;
-
-  mSSLIOHandler.Host := 'smtp.gmail.com';
-  mSSLIOHandler.Port := 587;
-
-  mMessage := TIdMessage.Create(nil);
-  mMessage.Recipients.Add;
-  mMessage.Recipients[0].Address := 'crypto.fdemirdag@gmail.com';
-  mMessage.Recipients[0].Domain  := 'gmail.com';
-  mMessage.Recipients[0].text    := 'crypto.fdemirdag@gmail.com';
-  mMessage.Recipients[0].User    := 'crypto.fdemirdag';
+  if fMessages.Count > 0 then
+  begin
+    for I := 0 to fMessages.Count - 1 do
+    begin
+      if fMessages[I].step < fStepIndex - (300 div Trunc(fInterval / 1000.0)) then
+        fMessages.DeleteRange(I, fMessages.Count - I);
+    end;
+  end;
 end;
 
 
 
-procedure InitializeREST;
+procedure DelayTimer;
 var
-  I       : integer;
-  strParam: string;
+  idleTime: double;
 begin
-  cliExchangeInfo          := TRESTClient.Create('https://api3.binance.com/api/v3/exchangeInfo');
-  reqExchangeInfo          := TRESTRequest.Create(nil);
-  rspExchangeInfo          := TRESTResponse.Create(nil);
-  reqExchangeInfo.Client   := cliExchangeInfo;
-  reqExchangeInfo.Response := rspExchangeInfo;
+  idleTime := fInterval * fStepIndex - getElapsedTime;
+  if idleTime < 0 then
+    idleTime := 0.0;
 
-  cliSymbolPrice          := TRESTClient.Create('https://api3.binance.com/api/v3/ticker/price');
-  reqSymbolPrice          := TRESTRequest.Create(nil);
-  rspSymbolPrice          := TRESTResponse.Create(nil);
-  reqSymbolPrice.Client   := cliSymbolPrice;
-  reqSymbolPrice.Response := rspSymbolPrice;
-
-  strParam := '[';
-  for I    := 1 to strfavs.Count - 2 do
-  begin
-    if I <> 1 then
-      strParam := strParam + ',';
-    strParam   := strParam + '"' + strfavs[I] + 'USDT' + '"';
-  end;
-  strParam := strParam + ']';
-
-  reqSymbolPrice.Params.AddItem('symbols', strParam, TRestRequestParameterKind.pkGETorPOST, [poDoNotEncode],
-      TRestContentType.ctTEXT_PLAIN);
-
-  mPlayer          := TMediaPlayer.Create(nil);
-  mPlayer.FileName := 'bimp.mp3';
-  mPlayer.Volume   := 25;
+{$IF Defined(MSWINDOWS)}
+  Sleep(round(idleTime));
+{$ELSEIF Defined(POSIX)}
+  usleep(idleTime * 1000);
+{$ENDIF POSIX}
 end;
 
 
@@ -212,7 +175,7 @@ begin
     if dataAva and EndsStr('USDT', symbol) then
     begin
       dataHolder.AddMarket(symbol, baseAsset, quoteAsset);
-      Print(format('%24s', [symbol]), TCTColor.LightGreen);
+      Print(format('%1s ', [symbol]), TCTColor.LightGreen);
     end;
   until not dataAva;
 
@@ -221,9 +184,45 @@ end;
 
 
 
+procedure InitializeREST;
+var
+  I       : integer;
+  strParam: string;
+begin
+  cliExchangeInfo          := TRESTClient.Create('https://api3.binance.com/api/v3/exchangeInfo');
+  reqExchangeInfo          := TRESTRequest.Create(nil);
+  rspExchangeInfo          := TRESTResponse.Create(nil);
+  reqExchangeInfo.Client   := cliExchangeInfo;
+  reqExchangeInfo.Response := rspExchangeInfo;
+
+  cliSymbolPrice          := TRESTClient.Create('https://api3.binance.com/api/v3/ticker/price');
+  reqSymbolPrice          := TRESTRequest.Create(nil);
+  rspSymbolPrice          := TRESTResponse.Create(nil);
+  reqSymbolPrice.Client   := cliSymbolPrice;
+  reqSymbolPrice.Response := rspSymbolPrice;
+
+  if not fAllCoins then
+  begin
+    strParam := '[';
+    for I    := 1 to strfavs.Count - 2 do
+    begin
+      if I <> 1 then
+        strParam := strParam + ',';
+      strParam   := strParam + '"' + strfavs[I] + 'USDT' + '"';
+    end;
+    strParam := strParam + ']';
+
+    reqSymbolPrice.Params.AddItem('symbols', strParam, TRestRequestParameterKind.pkGETorPOST, [poDoNotEncode],
+        TRestContentType.ctTEXT_PLAIN);
+  end;
+end;
+
+
+
 procedure InitializeRules;
 var
   strInterval: string;
+  I          : integer;
 begin
   memRules := TMemo.Create(nil);
   memRules.Lines.LoadFromFile('rules.txt');
@@ -249,6 +248,104 @@ begin
   strfavs.Delimiter       := '#';
   strfavs.StrictDelimiter := true;
   strfavs.DelimitedText   := filterString;
+
+  for I := 0 to strfavs.Count - 1 do
+  begin
+    if strfavs[I] = 'ALL' then
+      fAllCoins := true;
+  end;
+end;
+
+
+
+procedure parseRule(rule: string);
+var
+  strRule                       : TStringList;
+  coin, condition, sValue       : string;
+  sInterval, sAlertLevel, sEmail: string;
+  value                         : double;
+  interval                      : cardinal;
+  iCoin                         : string;
+  I                             : integer;
+begin
+  strRule := TStringList.Create;
+  strRule.Clear;
+  strRule.Delimiter       := ' ';
+  strRule.StrictDelimiter := true;
+  strRule.DelimitedText   := rule;
+
+  if strRule.Count >= 2 then
+  begin
+    coin      := strRule[0];
+    condition := strRule[1];
+    if condition = 'value' then
+    begin
+      sValue      := strRule[2];
+      sEmail      := strRule[3];
+      sInterval   := '0';
+      sAlertLevel := '0';
+    end
+    else if (condition = 'change') and (strRule.Count = 4) then
+    begin
+      sValue    := strRule[2];
+      sInterval := strRule[3];
+    end;
+
+    value    := StrToFloat(sValue);
+    interval := StrToInt(sInterval) div Trunc(fInterval / 1000.0);
+
+    if coin = 'FAV' then
+    begin
+      for I := 0 to dataHolder.GetMarketCount - 1 do
+      begin
+        iCoin := dataHolder.GetMarket(I).coin;
+        if filterString.Contains('#' + iCoin + '#') then
+          checkRule(iCoin, condition, value, interval);
+      end;
+    end
+    else if coin = 'ANY' then
+    begin
+      for I := 0 to dataHolder.GetMarketCount - 1 do
+      begin
+        iCoin := dataHolder.GetMarket(I).coin;
+        checkRule(iCoin, condition, value, interval);
+      end;
+    end
+    else
+      checkRule(coin, condition, value, interval);
+  end;
+end;
+
+
+
+procedure ParseRules;
+var
+  I: integer;
+begin
+  mMailMessage := '';
+
+  for I := 5 to memRules.Lines.Count - 1 do
+  begin
+    parseRule(memRules.Lines[I]);
+  end;
+
+  if (mMailMessage <> '') and (fMailOn) then
+  begin
+    sendMail('Crypto alert ' + TimeToStr(now), mMailMessage);
+  end
+  else if (mMailMessage <> '') and (fMusicOn) then
+  begin
+    PlaySound;
+  end;
+end;
+
+
+
+procedure StartTimer;
+begin
+  // fInterval  := 5000.0;
+  fStepIndex := 0;
+  fStopWatch.Start;
 end;
 
 
@@ -276,74 +373,6 @@ begin
   until not dataAva;
 
   dataHolder.ApplyNewData;
-end;
-
-
-
-procedure StartTimer;
-begin
-  // fInterval  := 5000.0;
-  fStepIndex := 0;
-  fStopWatch.Start;
-end;
-
-
-
-function GetElapsedTime: double;
-begin
-  if fStopWatch.IsHighResolution then
-  begin
-    result := fStopWatch.Elapsed.Ticks / fStopWatch.Elapsed.TicksPerMillisecond;
-  end
-  else
-  begin
-    result := fStopWatch.ElapsedMilliseconds;
-  end;
-end;
-
-
-
-procedure DelayTimer;
-var
-  idleTime: double;
-begin
-  idleTime := fInterval * fStepIndex - GetElapsedTime;
-  if idleTime < 0 then
-    idleTime := 0.0;
-
-{$IF Defined(MSWINDOWS)}
-  Sleep(round(idleTime));
-{$ELSEIF Defined(POSIX)}
-  usleep(idleTime * 1000);
-{$ENDIF POSIX}
-end;
-
-
-
-function FloatFormatAsString(value: double; fraction: cardinal): string;
-var
-  str       : string;
-  loc, cfraq: integer;
-  I         : integer;
-begin
-  str := FloatToStrF(value, TFloatFormat.ffNumber, fraction, 8);
-  loc := Pos('.', str);
-  if loc = 0 then
-  begin
-    str := str + '.';
-    loc := length(str);
-  end;
-
-  cfraq := length(str) - loc;
-  if cfraq <= fraction then
-  begin
-    for I := cfraq to fraction - 1 do
-      str := str + '0';
-  end
-  else
-    SetLength(str, loc + fraction);
-
-  result := str;
 end;
 
 
@@ -454,139 +483,6 @@ end;
 
 
 
-function GetIntervalStr(int: cardinal): string;
-var
-  intervalTime: cardinal;
-begin
-  intervalTime := Trunc(int * fInterval / 1000);
-
-  if (intervalTime mod 60 = 0) and (intervalTime mod 3600 <> 0) then
-    result := inttostr(intervalTime div 60) + ' mins '
-  else if intervalTime mod 3600 = 0 then
-    result := inttostr(intervalTime div 3600) + ' hrs '
-  else
-    result := inttostr(intervalTime) + ' secs ';
-end;
-
-
-
-procedure checkRule(coin, condition: string; value: double; offset: cardinal);
-var
-  current, prev: double;
-  ratio        : double;
-  msg          : TMessage;
-begin
-  current := dataHolder.GetMarketData(coin + 'USDT', 0);
-
-  if (LowerCase(condition) = 'change') and (dataHolder.GetDataDepth > (offset + 1)) then
-  begin
-    prev  := dataHolder.GetMarketData(coin + 'USDT', offset);
-    ratio := (current - prev) * 100.0 / prev;
-
-    if abs(ratio) >= value then
-    begin
-      msg.t        := now();
-      msg.symbol   := coin;
-      msg.rate     := round(ratio * 100) / 100;
-      msg.interval := offset;
-      msg.step     := fStepIndex;
-      fMessages.Insert(0, msg);
-
-      if msg.rate > 0.0 then
-      begin
-        mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' raised ' +
-            FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
-      end
-      else
-      begin
-        mMailMessage := mMailMessage + DateToStr(msg.t) + ' ' + TimeToStr(msg.t) + ': ' + msg.symbol + ' dropped ' +
-            FloatToStr(msg.rate) + ' in the last ' + GetIntervalStr(msg.interval) + #13 + #10;
-      end;
-    end;
-  end;
-end;
-
-
-
-procedure parseRule(rule: string);
-var
-  strRule                       : TStringList;
-  coin, condition, sValue       : string;
-  sInterval, sAlertLevel, sEmail: string;
-  value                         : double;
-  interval                      : cardinal;
-  iCoin                         : string;
-  I                             : integer;
-begin
-  strRule := TStringList.Create;
-  strRule.Clear;
-  strRule.Delimiter       := ' ';
-  strRule.StrictDelimiter := true;
-  strRule.DelimitedText   := rule;
-
-  if strRule.Count >= 2 then
-  begin
-    coin      := strRule[0];
-    condition := strRule[1];
-    if condition = 'value' then
-    begin
-      sValue      := strRule[2];
-      sEmail      := strRule[3];
-      sInterval   := '0';
-      sAlertLevel := '0';
-    end
-    else if (condition = 'change') and (strRule.Count = 4) then
-    begin
-      sValue    := strRule[2];
-      sInterval := strRule[3];
-    end;
-
-    value    := StrToFloat(sValue);
-    interval := StrToInt(sInterval) div Trunc(fInterval / 1000.0);
-
-    if coin = 'FAV' then
-    begin
-      for I := 0 to dataHolder.GetMarketCount - 1 do
-      begin
-        iCoin := dataHolder.GetMarket(I).coin;
-        if filterString.Contains('#' + iCoin + '#') then
-          checkRule(iCoin, condition, value, interval);
-      end;
-    end
-    else if coin = 'ANY' then
-    begin
-      for I := 0 to dataHolder.GetMarketCount - 1 do
-      begin
-        iCoin := dataHolder.GetMarket(I).coin;
-        checkRule(iCoin, condition, value, interval);
-      end;
-    end
-    else
-      checkRule(coin, condition, value, interval);
-  end;
-end;
-
-
-
-procedure ParseRules;
-var
-  I: integer;
-begin
-  mMailMessage := '';
-
-  for I := 5 to memRules.Lines.Count - 1 do
-  begin
-    parseRule(memRules.Lines[I]);
-  end;
-
-  if mMailMessage <> '' then
-  begin
-    sendMail('Crypto alert ' + TimeToStr(now), mMailMessage);
-  end;
-end;
-
-
-
 procedure WriteMessage(index: cardinal);
 var
   msg                       : TMessage;
@@ -622,7 +518,7 @@ begin
     text    := ' gained ';
   end;
 
-  intervalstr := GetIntervalStr(msg.interval);
+  intervalstr := GetIntervalStr(msg.interval, fInterval);
 
   Print(' ' + timestr + ' [' + inttostr(msg.step) + ']: ' + msg.symbol + text + FloatToStr(msg.rate) + ' in ' +
       intervalstr, color);
@@ -642,7 +538,7 @@ begin
 
   for I := 0 to fLineCount do
   begin
-    if (I div 2 < strfavs.Count - 2) and (I mod 2 = 0) then
+    if (I div 2 < strfavs.Count - 2) and (I mod 2 = 0) and (strfavs[I div 2 + 1] <> 'ALL') then
       WriteCoin(strfavs[I div 2 + 1])
     else
       Print('                                                                   |', TCTColor.White);
@@ -675,43 +571,7 @@ begin
   Print(' bytes ', TCTColor.White);
 
   Print('    Step: ', TCTColor.White);
-  Print(inttostr(fStepIndex), TCTColor.LightGray);
-end;
-
-
-
-procedure checkKeys;
-begin
-  if word(GetAsyncKeyState(65)) > 1 then
-    fMusicOn := not fMusicOn;
-
-  if word(GetAsyncKeyState(77)) > 1 then
-    fMusicOn := not fMusicOn;
-
-  if word(GetAsyncKeyState(VK_F1)) > 1 then
-    fLineCount := Max(24, fLineCount - 1);
-
-  if word(GetAsyncKeyState(VK_F2)) > 1 then
-    fLineCount := Min(48, fLineCount + 1);
-
-  if word(GetAsyncKeyState(113)) > 1 then
-    exit;
-end;
-
-
-
-procedure cleanupMessages;
-var
-  I, firdFoundIndex: cardinal;
-begin
-  if fMessages.Count > 0 then
-  begin
-    for I := 0 to fMessages.Count - 1 do
-    begin
-      if fMessages[I].step < fStepIndex - (300 div Trunc(fInterval / 1000.0)) then
-        fMessages.DeleteRange(I, fMessages.Count - I);
-    end;
-  end;
+  Print(inttostr(fStepIndex), TCTColor.Cyan);
 end;
 
 
@@ -729,16 +589,15 @@ begin
       if mPlayer <> nil then
         mPlayer.Stop;
 
-      fTimeIndex := GetElapsedTime;
+      fTimeIndex := getElapsedTime;
       UpdatePrices;
-      fPriceCheckTime := GetElapsedTime - fTimeIndex;
+      fPriceCheckTime := getElapsedTime - fTimeIndex;
       ParseRules;
       UpdateScreen;
       cleanupMessages;
 
       Inc(fStepIndex);
       DelayTimer;
-      checkKeys;
     except
       on E: Exception do
         Writeln(E.ClassName, ': ', E.Message);

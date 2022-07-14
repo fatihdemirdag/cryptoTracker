@@ -197,6 +197,7 @@
         </DelphiCompile>
         <DCCReference Include="uExchangeDataHolder.pas"/>
         <DCCReference Include="uRESTResponseHelper.pas"/>
+        <DCCReference Include="uUtilityMethods.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -250,9 +251,9 @@
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>
-                <DeployFile LocalName="Win64\Debug\CryptoTracker.rsm" Configuration="Debug" Class="DebugSymbols">
+                <DeployFile LocalName="Win64\Release\CryptoTracker.exe" Configuration="Release" Class="ProjectOutput">
                     <Platform Name="Win64">
-                        <RemoteName>CryptoTracker.rsm</RemoteName>
+                        <RemoteName>CryptoTracker.exe</RemoteName>
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>
