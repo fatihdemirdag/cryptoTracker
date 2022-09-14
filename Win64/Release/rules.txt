@@ -1,12 +1,8 @@
-#BTC#ETH#AUDIO#BLZ#BURGER#COTI#ELF#LDO#STRAX#SHIB#XNO#ALL#
+#ELF#APE#ALL# 
 mailoff
 musicon
 2000
 27
-FAV change 0.8 10
-FAV change 1.5 60
-FAV change 3.0 300
-FAV change 4.0 900
-FAV change 6.0 3600
-ANY change 1.2 10
-ANY change 2.0 60
+FAV change 0.5 30
+FAV change 5.0 60
+ANY change 5.0 60

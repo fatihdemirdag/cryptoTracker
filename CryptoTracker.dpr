@@ -51,6 +51,7 @@ var
   fTimeIndex     : double;
   fPriceCheckTime: double;
   fMessages      : TList<TMessage>;
+  formatSettings : TFormatSettings;
 
   fMailOn   : Boolean;
   fMusicOn  : Boolean;
@@ -224,6 +225,9 @@ var
   strInterval: string;
   I          : integer;
 begin
+  GetLocaleFormatSettings(LOCALE_SYSTEM_DEFAULT, formatSettings);
+  formatSettings.DecimalSeparator := '.';
+
   memRules := TMemo.Create(nil);
   memRules.Lines.LoadFromFile('rules.txt');
   filterString := memRules.Lines[0];
@@ -239,7 +243,7 @@ begin
     fMusicOn := false;
 
   strInterval := memRules.Lines[3];
-  fInterval   := StrToFloat(strInterval);
+  fInterval   := StrToFloat(strInterval, formatSettings);
 
   fLineCount := StrToInt(memRules.Lines[4]);
 
@@ -291,7 +295,7 @@ begin
       sInterval := strRule[3];
     end;
 
-    value    := StrToFloat(sValue);
+    value    := StrToFloat(sValue, formatSettings);
     interval := StrToInt(sInterval) div Trunc(fInterval / 1000.0);
 
     if coin = 'FAV' then
@@ -367,7 +371,7 @@ begin
     dataAva := dataAva and restReader.GetNextValueAsString('[' + inttostr(id) + '].symbol', symbol);
     dataAva := dataAva and restReader.GetNextValueAsString('[' + inttostr(id) + '].price', strPrice);
     Inc(id);
-    price := StrToFloat(strPrice);
+    price := StrToFloat(strPrice, formatSettings);
 
     dataHolder.NewMarketData(symbol, price);
   until not dataAva;
