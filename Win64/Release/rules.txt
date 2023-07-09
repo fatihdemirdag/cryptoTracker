@@ -1,8 +1,9 @@
-#ELF#APE#ALL# 
+#BTC#BURGER#MATIC#ALL# 
 mailoff
 musicon
 2000
 27
-FAV change 0.5 30
-FAV change 5.0 60
-ANY change 5.0 60
+FAV change 0.5 20
+FAV change 1.5 60
+FAV change 2.5 120
+ANY change 10.0 60
