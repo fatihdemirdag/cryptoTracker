@@ -118,7 +118,7 @@ end;
 
 procedure cleanupMessages;
 var
-  I, firdFoundIndex: cardinal;
+  I: cardinal;
 begin
   if fMessages.Count > 0 then
   begin
@@ -383,7 +383,7 @@ end;
 
 procedure WriteCoin(coin: string);
 var
-  currValue, prevValue, predValue, predAcc   : double;
+  currValue, prevValue{, predValue, predAcc}   : double;
   val1min, val5min, val15min, val30min, val1h: double;
   rat1min, rat5min, rat15min, rat30min, rat1h: double;
   clrInc, clrDec, clrNat                     : TCTColor;
@@ -391,13 +391,14 @@ begin
   clrInc := TCTColor.LightGreen;
   clrDec := TCTColor.LightRed;
   clrNat := TCTColor.White;
+  currValue := 0.0;
 
   if dataHolder.GetDataDepth >= 1 then
   begin
     currValue := dataHolder.GetMarketData(coin + 'USDT', 0);
     prevValue := dataHolder.GetMarketData(coin + 'USDT', 1);
-    predValue := dataHolder.GetMarketPrediction(coin + 'USDT', 0);
-    predAcc   := dataHolder.GetPredictionAccuracy(coin + 'USDT', 0);
+    //predValue := dataHolder.GetMarketPrediction(coin + 'USDT', 0);
+    //predAcc   := dataHolder.GetPredictionAccuracy(coin + 'USDT', 0);
 
     if prevValue > currValue then
       Print(format('%8s  %16s ', [coin, FloatFormatAsString(currValue, 8)]), clrDec)
